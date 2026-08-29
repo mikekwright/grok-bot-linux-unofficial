@@ -3,8 +3,9 @@
 #
 # Usage:
 #   scripts/build.sh                 # latest CDN version
-#   scripts/build.sh 0.29.0
-#   scripts/build.sh --exe /path/to/Grok_Bot_0.29.0_Setup.exe
+#   scripts/build.sh --deb-only      # only the Ubuntu/Debian package
+#   scripts/build.sh X.Y.Z
+#   scripts/build.sh --exe /path/to/Grok_Bot_X.Y.Z_Setup.exe
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -14,7 +15,7 @@ ELECTRON_VERSION="${ELECTRON_VERSION:-42.1.0}"
 
 usage() {
   cat <<EOF
-Usage: $(basename "$0") [--exe /path/to/Grok_Bot_X.Y.Z_Setup.exe] [X.Y.Z]
+Usage: $(basename "$0") [--deb-only] [--exe /path/to/Grok_Bot_X.Y.Z_Setup.exe] [X.Y.Z]
 
 Downloads the official Windows installer (or uses --exe), extracts the
 Electron app without Wine, fuses it with Electron ${ELECTRON_VERSION} for
@@ -24,13 +25,17 @@ Linux, replaces Windows native addons, and writes:
   dist/Grok_Bot_<ver>_linux_x64.tar.gz
   dist/grok-bot_<ver>_amd64.deb
   dist/Grok_Bot_<ver>_x86_64.AppImage     (if mksquashfs is available)
+
+With --deb-only, only dist/grok-bot_<ver>_amd64.deb is written.
 EOF
 }
 
 EXE=""
 VERSION=""
+DEB_ONLY=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --deb-only) DEB_ONLY=1; shift ;;
     --exe) EXE="${2:?}"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     -*) echo "unknown option $1" >&2; usage >&2; exit 1 ;;
@@ -195,16 +200,21 @@ chmod 755 "${STAGE}/grok-bot"
 find "${STAGE}" -type f \( -name '*.node' -o -name '*.so' -o -name '*.so.*' \) -exec chmod 755 {} +
 
 mkdir -p "$DIST"
-rm -rf "${DIST}/Grok_Bot_${VERSION}_linux_x64"
-cp -a "$STAGE" "${DIST}/Grok_Bot_${VERSION}_linux_x64"
+if [[ "$DEB_ONLY" -eq 1 ]]; then
+  "${ROOT}/scripts/package-deb.sh" "$STAGE" "$VERSION" "$DIST"
+else
+  rm -rf "${DIST}/Grok_Bot_${VERSION}_linux_x64"
+  cp -a "$STAGE" "${DIST}/Grok_Bot_${VERSION}_linux_x64"
 
-TARBALL="${DIST}/Grok_Bot_${VERSION}_linux_x64.tar.gz"
-tar -C "$DIST" -czf "$TARBALL" "Grok_Bot_${VERSION}_linux_x64"
-echo "tarball $TARBALL"
+  TARBALL="${DIST}/Grok_Bot_${VERSION}_linux_x64.tar.gz"
+  tar -C "$DIST" -czf "$TARBALL" "Grok_Bot_${VERSION}_linux_x64"
+  echo "tarball $TARBALL"
 
-"${ROOT}/scripts/package-deb.sh" "${DIST}/Grok_Bot_${VERSION}_linux_x64" "$VERSION" "$DIST"
+  "${ROOT}/scripts/package-deb.sh" \
+    "${DIST}/Grok_Bot_${VERSION}_linux_x64" "$VERSION" "$DIST"
+fi
 
-if command -v mksquashfs >/dev/null; then
+if [[ "$DEB_ONLY" -eq 0 ]] && command -v mksquashfs >/dev/null; then
   APPDIR="${WORKDIR}/AppDir"
   mkdir -p "${APPDIR}/usr/bin" "${APPDIR}/usr/share/applications"
   cp -a "${STAGE}/." "${APPDIR}/usr/bin/"
@@ -247,6 +257,5 @@ EOF
   fi
 fi
 
-printf '%s\n' "$VERSION" > "${ROOT}/VERSION"
 echo "done ${VERSION}"
 ls -lh "$DIST"

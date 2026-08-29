@@ -14,7 +14,8 @@ It is **not** an xAI or Cursor product. Linux is unsupported by them.
 The official Grok Bot UI — bots, the shared computer, sign-in with your
 Cursor account — running as a native Linux app. No Wine.
 
-Current target: **Grok Bot 0.29.0** on **Electron 42.1.0** (x86_64).
+The latest stable upstream release is resolved dynamically through Cursor's
+update service. The current Linux runtime is **Electron 42.1.0** (x86_64).
 
 ## Ubuntu / Debian
 
@@ -26,18 +27,24 @@ sudo apt install p7zip-full curl unzip build-essential python3 \
 
 git clone <this-repo> grok-bot-linux
 cd grok-bot-linux
-make build
-sudo dpkg -i dist/grok-bot_*_amd64.deb
-sudo apt-get install -f -y   # if dpkg reports missing GTK/NSS libs
+make update
 
 grok-bot
 ```
+
+`make update` downloads, rebuilds, validates, and installs only when Cursor
+has published a newer stable version. The final package installation uses the
+normal graphical administrator prompt (or `sudo` when no graphical session is
+available). It builds only the `.deb`; `make build` remains the command for all
+distribution formats.
 
 Or skip the package and run the tree directly:
 
 ```bash
 make build
-./dist/Grok_Bot_0.29.0_linux_x64/grok-bot --no-sandbox --ozone-platform-hint=auto
+version="$(make -s detect)"
+"./dist/Grok_Bot_${version}_linux_x64/grok-bot" \
+  --no-sandbox --ozone-platform-hint=auto
 ```
 
 AppImage (needs FUSE 2):
@@ -64,11 +71,13 @@ tar -xzf dist/Grok_Bot_*_linux_x64.tar.gz
 
 | Command | Result |
 |---|---|
-| `make detect` | Newest official Windows version on Cursor's CDN |
+| `make detect` | Newest stable version from Cursor's update API |
 | `make build` | Tarball + `.deb` + AppImage in `dist/` |
-| `./scripts/build.sh 0.29.0` | Pin a specific upstream version |
-| `./scripts/build.sh --exe ~/Downloads/Grok_Bot_0.29.0_Setup.exe` | Use an installer you already downloaded |
-| `make install-deb` | Build if needed and `dpkg -i` |
+| `make update` | Build, validate, and install only when needed |
+| `./scripts/update.sh --check` | Compare installed and latest versions |
+| `./scripts/build.sh X.Y.Z` | Pin a specific upstream version |
+| `./scripts/build.sh --exe ~/Downloads/Grok_Bot_X.Y.Z_Setup.exe` | Use an installer you already downloaded |
+| `make install-updater` | Add `grok-bot-update` to `~/.local/bin` |
 
 If Chromium's sandbox cannot take setuid (containers, some Ubuntu
 defaults), the `/usr/bin/grok-bot` wrapper adds `--no-sandbox`. Extra
@@ -79,14 +88,30 @@ NVIDIA + black window: add `--ozone-platform=x11` to that file.
 
 ## Updates
 
-The in-app updater talks to Windows/macOS feeds and will not install a
-Linux build. When Cursor ships a new version:
+The in-app updater does not install this unofficial Linux build. Install the
+one-command updater once from the repository:
 
 ```bash
-make detect
-make build
-sudo dpkg -i dist/grok-bot_*_amd64.deb
+make install-updater
 ```
+
+After that, update from any directory with:
+
+```bash
+grok-bot-update
+```
+
+Close Grok Bot before installing an available update. Routine upstream
+updates write only ignored files under `.cache/` and `dist/`; they do not edit
+the checkout or require a Git commit. Repository changes are needed only when
+Cursor changes the app packaging, Electron ABI, or native dependencies.
+
+The updater retains the installed `.deb` and at most one previous `.deb` for
+rollback, and removes superseded cached upstream installers. Cursor's update
+response currently does not provide a checksum, so the installer cannot be
+cryptographically pinned: the updater instead requires HTTPS, allow-lists the
+exact download host and path, and validates the resulting Debian package's
+identity and required contents before installation.
 
 ## How this compares to the Mac app
 
