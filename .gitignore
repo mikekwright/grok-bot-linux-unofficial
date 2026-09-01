@@ -9,6 +9,9 @@ tmp/
 *.rpm
 *.tar.gz
 node_modules/
+result
+result-*
 .asar-unpacked/
 *.log
 .DS_Store
+*.local.*

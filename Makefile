@@ -1,7 +1,7 @@
 PREFIX ?= /usr/local
 UPDATER_BIN ?= $(HOME)/.local/bin/grok-bot-update
 
-.PHONY: help detect build run update install-deb install-updater clean
+.PHONY: help detect build run update pin install-deb install-updater clean
 
 help:
 	@echo "Grok Bot Linux port"
@@ -9,6 +9,7 @@ help:
 	@echo "  make detect       Print the newest stable version from Cursor's update API"
 	@echo "  make build        Rebuild that version for Linux (tarball, .deb, AppImage)"
 	@echo "  make update       Build and install only when a newer version exists"
+	@echo "  make pin          Refresh upstream.json with the newest stable release"
 	@echo "  make run          Launch the staged app from dist/"
 	@echo "  make install-deb  Alias for make update"
 	@echo "  make install-updater  Add grok-bot-update to ~/.local/bin"
@@ -28,6 +29,9 @@ run:
 
 update install-deb:
 	./scripts/update.sh
+
+pin:
+	./scripts/update-pin.sh
 
 install-updater:
 	@mkdir -p "$(dir $(UPDATER_BIN))"

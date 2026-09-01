@@ -1,0 +1,43 @@
+name: Update upstream pin
+
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: DeterminateSystems/nix-installer-action@main
+
+      - name: Refresh upstream.json
+        run: ./scripts/update-pin.sh
+
+      - name: Detect changes
+        id: diff
+        run: |
+          if git diff --quiet -- upstream.json; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Validate the pinned release builds
+        if: steps.diff.outputs.changed == 'true'
+        run: nix build --print-build-logs .#grok-bot
+
+      - name: Commit and push
+        if: steps.diff.outputs.changed == 'true'
+        run: |
+          version="$(python3 -c 'import json; print(json.load(open("upstream.json"))["version"])')"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add upstream.json
+          git commit -m "Pin Grok Bot ${version}"
+          git push
