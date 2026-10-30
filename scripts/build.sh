@@ -11,15 +11,17 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST="${ROOT}/dist"
 CACHE="${ROOT}/.cache"
-ELECTRON_VERSION="${ELECTRON_VERSION:-42.1.0}"
+ELECTRON_VERSION="${ELECTRON_VERSION:-}"
+FALLBACK_ELECTRON_VERSION="42.11.16"
 
 usage() {
   cat <<EOF
 Usage: $(basename "$0") [--deb-only] [--exe /path/to/Grok_Bot_X.Y.Z_Setup.exe] [X.Y.Z]
 
 Downloads the official Windows installer (or uses --exe), extracts the
-Electron app without Wine, fuses it with Electron ${ELECTRON_VERSION} for
-Linux, replaces Windows native addons, and writes:
+Electron app without Wine, fuses it with the Linux build of the same
+Electron release the installer was made with (override with ELECTRON_VERSION),
+replaces Windows native addons, and writes:
 
   dist/Grok_Bot_<ver>_linux_x64/          runnable tree
   dist/Grok_Bot_<ver>_linux_x64.tar.gz
@@ -107,7 +109,6 @@ trap cleanup EXIT
 
 echo "Windows installer : $EXE"
 echo "Grok Bot version  : $VERSION"
-echo "Electron          : $ELECTRON_VERSION"
 echo "node_api.h        : $NODE_INCLUDE"
 echo "Workdir           : $WORKDIR"
 
@@ -125,6 +126,23 @@ if [[ ! -f "$ASAR" && -f "${APP}/app.asar" ]]; then
   [[ -d "${APP}/app.asar.unpacked" ]] && mv "${APP}/app.asar.unpacked" "${APP}/resources/app.asar.unpacked"
 fi
 [[ -f "$ASAR" ]] || { echo "resources/app.asar missing" >&2; exit 1; }
+
+detect_electron_version() {
+  local exe found
+  exe="$(find "$APP" -maxdepth 1 -name '*.exe' | head -1)"
+  [[ -n "$exe" ]] || return 0
+  found="$(grep -a -o -m1 'Electron/[0-9][0-9.]*' "$exe" 2>/dev/null | head -1 || true)"
+  printf '%s\n' "${found#Electron/}"
+}
+
+if [[ -z "$ELECTRON_VERSION" ]]; then
+  ELECTRON_VERSION="$(detect_electron_version)"
+  if [[ -z "$ELECTRON_VERSION" ]]; then
+    ELECTRON_VERSION="$FALLBACK_ELECTRON_VERSION"
+    echo "warn: could not read the Electron version from the installer; using ${ELECTRON_VERSION}" >&2
+  fi
+fi
+echo "Electron          : $ELECTRON_VERSION"
 
 EL_ZIP="${CACHE}/electron-v${ELECTRON_VERSION}-linux-x64.zip"
 mkdir -p "$CACHE"

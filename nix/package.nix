@@ -25,13 +25,7 @@ let
   electronDist = "${electron_42}/libexec/electron";
 
   # Linux replacements for the native addons vendored in the official
-  # payload. Versions must match scripts/fix-natives.py. The better-sqlite3
-  # prebuild is built against the Electron 42 ABI (electron-v146), so it is
-  # coupled to the electron_42 runtime above.
-  betterSqlite3Prebuild = fetchurl {
-    url = "https://github.com/WiseLibs/better-sqlite3/releases/download/v12.11.1/better-sqlite3-v12.11.1-electron-v146-linux-x64.tar.gz";
-    hash = "sha256-4gIa7tgN5PFSElJeMFZXVqqueQ5o4yKd9tE0X0OAMiE=";
-  };
+  # payload. Versions must match scripts/fix-natives.py.
   treeSitterPkg = fetchurl {
     url = "https://registry.npmjs.org/tree-sitter/-/tree-sitter-0.21.1.tgz";
     hash = "sha256-Sdjt9rNM1xmj5EoM4VQhH5lgOe7mtqSyl8PoT3ZtbXA=";
@@ -39,10 +33,6 @@ let
   treeSitterBashPkg = fetchurl {
     url = "https://registry.npmjs.org/tree-sitter-bash/-/tree-sitter-bash-0.21.0.tgz";
     hash = "sha256-I9viz05KMQLRhYpgsAYjhEp5Y4ei0VN0ZS2ZbtsXPjQ=";
-  };
-  whichlangPkg = fetchurl {
-    url = "https://registry.npmjs.org/whichlang-node-linux-x64-gnu/-/whichlang-node-linux-x64-gnu-0.2.1.tgz";
-    hash = "sha256-HFbx2J7RhXK2LJhGHOj1nPxnWHQhi3IQNIIuX4+FpWE=";
   };
 in
 stdenv.mkDerivation {
@@ -96,15 +86,36 @@ stdenv.mkDerivation {
     deps=stage/resources/app.asar.unpacked/dist/deps
     [ -d "$deps" ] || { echo "missing $deps" >&2; exit 1; }
 
-    if [ -d "$deps/better-sqlite3" ]; then
-      mkdir ex-bs
-      tar -xzf ${betterSqlite3Prebuild} -C ex-bs
-      node="$(find ex-bs -name better_sqlite3.node | head -1)"
-      install -Dm755 "$node" "$deps/better-sqlite3/build/Release/better_sqlite3.node"
-      echo "better-sqlite3 linux prebuild installed"
-    else
-      echo "skip better-sqlite3 (not in payload)"
-    fi
+    # Addon names must match KNOWN_ADDONS in scripts/fix-natives.py.
+    # @anysphere/jpeg-napi ships no Linux binary; its caller only fails when
+    # JPEG rendition rendering is invoked, so it is left untouched.
+    python3 - "$deps" <<'PY'
+    import json, re, sys
+    from pathlib import Path
+
+    deps = Path(sys.argv[1])
+    known = {
+        "tree-sitter", "tree-sitter-bash", "cursor-proclist",
+        "@anysphere/tree-chunk-napi", "@anysphere/jpeg-napi",
+        "sand-address-lookup", "sand-card-text-recognition", "sand-devicecheck",
+        "sand-notification-settings", "sand-window-capture",
+    }
+    manifest = deps / "runtime-deps-manifest.json"
+    if manifest.is_file():
+        required = json.loads(manifest.read_text()).get("required", [])
+        unknown = [name for name in required if name not in known]
+        if unknown:
+            lines = ["This Grok Bot release requires native addons the Linux port does not know yet:"]
+            for name in unknown:
+                index_js = deps / name / "index.js"
+                text = index_js.read_text(errors="replace") if index_js.is_file() else ""
+                names = sorted(set(re.findall(r"binding\.([A-Za-z_][A-Za-z0-9_]*)", text)))
+                lines.append(f"  - {name} (exports: {', '.join(names) or 'see its index.js'})")
+            lines.append("Check how dist/electron-main/*.cjs calls it, then add a stub or a Linux "
+                         "implementation in native/ plus a case in scripts/fix-natives.py and nix/package.nix.")
+            sys.exit("\n".join(lines))
+    print("manifest ok")
+    PY
 
     if [ -d "$deps/tree-sitter" ]; then
       mkdir ex-ts
@@ -126,15 +137,6 @@ stdenv.mkDerivation {
       echo "tree-sitter-bash linux prebuild installed"
     else
       echo "skip tree-sitter-bash (not in payload)"
-    fi
-
-    if [ -d "$deps/whichlang-node" ]; then
-      mkdir ex-wl
-      tar -xzf ${whichlangPkg} -C ex-wl
-      install -m755 ex-wl/package/*.linux-x64-gnu.node "$deps/whichlang-node/"
-      echo "whichlang-node linux prebuild installed"
-    else
-      echo "skip whichlang-node (not in payload)"
     fi
 
     if [ -d "$deps/cursor-proclist" ]; then

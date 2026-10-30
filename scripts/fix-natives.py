@@ -8,7 +8,9 @@ modules are compiled from native/ in this repository.
 
 from __future__ import annotations
 
+import json
 import os
+import re
 import shutil
 import subprocess
 import tarfile
@@ -26,6 +28,22 @@ SAND_STUB_ADDONS = (
     "sand-devicecheck",
     "sand-notification-settings",
     "sand-window-capture",
+)
+
+# Every addon this script knows how to handle. @anysphere/jpeg-napi ships no
+# Linux binary and its caller only fails when JPEG rendition rendering is
+# invoked, so it is left untouched. Anything else listed as required in the
+# payload's runtime-deps-manifest.json is a new private addon that needs a
+# decision before the build can be trusted.
+KNOWN_ADDONS = frozenset(
+    {
+        "tree-sitter",
+        "tree-sitter-bash",
+        "cursor-proclist",
+        "@anysphere/tree-chunk-napi",
+        "@anysphere/jpeg-napi",
+        *SAND_STUB_ADDONS,
+    }
 )
 
 
@@ -52,11 +70,6 @@ def npm_pack_extract(spec: str, dest: Path) -> Path:
     if not pkg.is_dir():
         raise RuntimeError(f"npm pack {spec} did not contain package/")
     return pkg
-
-
-def download(url: str, dest: Path) -> None:
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    run(["curl", "-fL", "--retry", "3", "-A", "grok-bot-linux", "-o", str(dest), url])
 
 
 def compile_native(src: Path, dest: Path, name: str) -> None:
@@ -98,6 +111,38 @@ def present(rel: str) -> bool:
     return (DEPS / rel).exists()
 
 
+def exported_binding_names(index_js: Path) -> list[str]:
+    try:
+        text = index_js.read_text(errors="replace")
+    except OSError:
+        return []
+    return sorted(set(re.findall(r"binding\.([A-Za-z_][A-Za-z0-9_]*)", text)))
+
+
+def check_manifest() -> None:
+    assert DEPS is not None
+    manifest = DEPS / "runtime-deps-manifest.json"
+    if not manifest.is_file():
+        return
+    try:
+        required = json.loads(manifest.read_text()).get("required", [])
+    except (OSError, json.JSONDecodeError) as exc:
+        raise SystemExit(f"cannot read {manifest}: {exc}")
+    unknown = [name for name in required if name not in KNOWN_ADDONS]
+    if not unknown:
+        return
+    lines = ["This Grok Bot release requires native addons the Linux port does not know yet:"]
+    for name in unknown:
+        names = exported_binding_names(DEPS / name / "index.js")
+        api = ", ".join(names) if names else "see its index.js"
+        lines.append(f"  - {name} (exports: {api})")
+    lines.append(
+        "Check how dist/electron-main/*.cjs calls it, then add a stub or a Linux "
+        "implementation in native/ plus a case in scripts/fix-natives.py and nix/package.nix."
+    )
+    raise SystemExit("\n".join(lines))
+
+
 def main() -> None:
     global DEPS
     unpacked = Path(os.environ["GROKBOT_UNPACKED"])
@@ -105,25 +150,10 @@ def main() -> None:
     if not DEPS.is_dir():
         raise SystemExit(f"missing {DEPS}")
 
+    check_manifest()
+
     tmp = Path(tempfile.mkdtemp(prefix="gb-native-"))
     native = ROOT / "native"
-
-    if present("better-sqlite3"):
-        tgz = tmp / "bs.tar.gz"
-        download(
-            "https://github.com/WiseLibs/better-sqlite3/releases/download/"
-            "v12.11.1/better-sqlite3-v12.11.1-electron-v146-linux-x64.tar.gz",
-            tgz,
-        )
-        with tarfile.open(tgz, "r:gz") as archive:
-            archive.extractall(tmp / "ex")
-        node = next((tmp / "ex").rglob("better_sqlite3.node"))
-        dest = DEPS / "better-sqlite3" / "build" / "Release" / "better_sqlite3.node"
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(node, dest)
-        print("better-sqlite3:", dest)
-    else:
-        print("skip better-sqlite3 (not in payload)")
 
     if present("tree-sitter"):
         ts_pkg = npm_pack_extract("tree-sitter@0.21.1", tmp / "tree-sitter")
@@ -142,18 +172,6 @@ def main() -> None:
         print("tree-sitter-bash linux prebuild installed")
     else:
         print("skip tree-sitter-bash (not in payload)")
-
-    if present("whichlang-node"):
-        wl_pkg = npm_pack_extract(
-            "whichlang-node-linux-x64-gnu@0.2.1", tmp / "whichlang"
-        )
-        wl_node = next(wl_pkg.glob("*.linux-x64-gnu.node"))
-        dest_dir = DEPS / "whichlang-node"
-        dest_dir.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(wl_node, dest_dir / wl_node.name)
-        print("whichlang-node:", wl_node.name)
-    else:
-        print("skip whichlang-node (not in payload)")
 
     if present("cursor-proclist"):
         compile_native(

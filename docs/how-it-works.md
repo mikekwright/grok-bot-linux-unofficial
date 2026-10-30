@@ -37,16 +37,24 @@ asar contents. It is not used by the build.
    HEAD-probes semver candidates on the CDN.
 2. **Extract.** `7z x Setup.exe` then `7z x app-64.7z`.
 3. **Runtime.** Download the official Electron Linux zip that matches the
-   Windows exe (currently **42.1.0**, Chrome 148). Rename `electron` to
+   Windows exe. The version is read from the exe at build time (currently
+   **42.11.x**, Chrome 148); `ELECTRON_VERSION` overrides it. Rename `electron` to
    `grok-bot` and copy Chromium helpers (`icudtl.dat`, `.pak`, `locales`,
    `chrome-sandbox`, …).
 4. **Native modules.** Windows `.node` files are PE (`MZ`). Linux
    `dlopen` would crash. `scripts/fix-natives.py` replaces whatever the
    payload actually ships:
    - `tree-sitter` / `tree-sitter-bash` — public npm linux-x64 prebuilds
-   - `better-sqlite3` / `whichlang-node` — public prebuilds when present
    - `cursor-proclist` — Linux `/proc` implementation in `native/`
-   - private leftover addons — empty N-API stubs so `require()` succeeds
+   - `sand-*` private addons — empty N-API stubs so `require()` succeeds;
+     their callers check the exports and fall back when they are missing
+   - `@anysphere/jpeg-napi` — no Linux binary ships and the source is
+     private, so it is left as is. JPEG rendition rendering is unavailable;
+     everything else works.
+
+   The payload's `runtime-deps-manifest.json` lists the required addons. An
+   addon the port does not know stops the build and prints its name and
+   exported functions.
 5. **Repack `app.asar`** so packed and unpacked `dist/deps` stay in sync.
 6. **Desktop identity.** A small CJS wrapper becomes `package.json` `main`
    so Wayland sees `grok-bot` / `grok-bot.desktop`.

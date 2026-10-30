@@ -15,7 +15,9 @@ The official Grok Bot UI — bots, the shared computer, sign-in with your
 Cursor account — running as a native Linux app. No Wine.
 
 The latest stable upstream release is resolved dynamically through Cursor's
-update service. The current Linux runtime is **Electron 42.1.0** (x86_64).
+update service. The Linux runtime is the Electron release the installer was
+built with, read from the Windows exe at build time (currently Electron 42.x,
+x86_64).
 
 ## Ubuntu / Debian
 
@@ -155,6 +157,13 @@ Close Grok Bot before installing an available update. Routine upstream
 updates write only ignored files under `.cache/` and `dist/`; they do not edit
 the checkout or require a Git commit. Repository changes are needed only when
 Cursor changes the app packaging, Electron ABI, or native dependencies.
+
+If a release adds a native addon the port does not handle yet, both build
+paths stop and name it together with the functions it exports, instead of
+producing an app that fails at startup. Addons are listed in the payload's
+`runtime-deps-manifest.json`; each new one needs either a stub or a Linux
+implementation in `native/` plus a case in `scripts/fix-natives.py` and
+`nix/package.nix`.
 
 The updater retains the installed `.deb` and at most one previous `.deb` for
 rollback, and removes superseded cached upstream installers. Cursor's update
