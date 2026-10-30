@@ -158,6 +158,21 @@ stdenv.mkDerivation {
       echo "skip tree-chunk-napi (not in payload)"
     fi
 
+    for addon in sand-address-lookup sand-card-text-recognition sand-devicecheck \
+                 sand-notification-settings sand-window-capture; do
+      if [ -d "$deps/$addon" ]; then
+        name="''${addon//-/_}"
+        mkdir -p "$deps/$addon/build/Release"
+        $CC -shared -fPIC -O2 -I${nodejs}/include/node \
+          ${../native/napi_stub.c} \
+          -o "$deps/$addon/build/Release/$name.node" \
+          -DNODE_GYP_MODULE_NAME=$name
+        echo "$addon stub"
+      else
+        echo "skip $addon (not in payload)"
+      fi
+    done
+
     # Prebuilt C++ addons expect a global libstdc++, which NixOS does not
     # have; give every Linux .node an explicit rpath into the nix store.
     find "$deps" -name '*.node' -type f | while read -r node; do

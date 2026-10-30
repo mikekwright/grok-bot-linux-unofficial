@@ -18,6 +18,16 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 DEPS: Path | None = None
 
+# Private Windows/macOS-only addons whose JavaScript callers fall back
+# gracefully when the exports are missing, so an empty N-API stub suffices.
+SAND_STUB_ADDONS = (
+    "sand-address-lookup",
+    "sand-card-text-recognition",
+    "sand-devicecheck",
+    "sand-notification-settings",
+    "sand-window-capture",
+)
+
 
 def is_pe(path: Path) -> bool:
     try:
@@ -164,6 +174,18 @@ def main() -> None:
         print("tree-chunk-napi stub")
     else:
         print("skip tree-chunk-napi (not in payload)")
+
+    for addon in SAND_STUB_ADDONS:
+        if not present(addon):
+            print(f"skip {addon} (not in payload)")
+            continue
+        name = addon.replace("-", "_")
+        compile_native(
+            native / "napi_stub.c",
+            DEPS / addon / "build" / "Release" / f"{name}.node",
+            name,
+        )
+        print(f"{addon} stub")
 
     live_pe: list[str] = []
     for path in DEPS.rglob("*.node"):
